@@ -62,13 +62,38 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({ nombre_usuario: nombreUsuario, password }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        setMensaje(data.message ?? "Inicio de sesión exitoso.");
+        try {
+          const sessionResponse = await fetch("/api/login", {
+            credentials: "include",
+          });
+          const sessionData = await sessionResponse.json();
+
+          if (sessionResponse.ok) {
+            setMensaje(
+              sessionData.message ??
+                data.message ??
+                "Inicio de sesión exitoso y sesión validada."
+            );
+            setError("");
+          } else {
+            setMensaje(data.message ?? "Inicio de sesión exitoso.");
+            setError(
+              sessionData.message ??
+                "No se pudo validar la sesión del usuario."
+            );
+          }
+        } catch (sessionError) {
+          console.error("No se pudo validar la sesión:", sessionError);
+          setMensaje(data.message ?? "Inicio de sesión exitoso.");
+          setError("No se pudo validar la sesión del usuario.");
+        }
       } else {
         setMensaje("");
         setError(data.message ?? "No se pudo iniciar sesión.");

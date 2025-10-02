@@ -2,6 +2,81 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { verifyPassword } from "@/lib/password";
 
+const SESSION_COOKIE_NAME = "session_user";
+
+function createSessionCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+  };
+}
+
+function clearSessionCookie(response) {
+  response.cookies.set(SESSION_COOKIE_NAME, "", {
+    ...createSessionCookieOptions(),
+    maxAge: 0,
+  });
+}
+
+export async function GET(request) {
+  try {
+    const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
+
+    if (!sessionCookie) {
+      return NextResponse.json(
+        { message: "Sesión no encontrada. Inicia sesión nuevamente." },
+        { status: 401 }
+      );
+    }
+
+    const userId = Number(sessionCookie.value);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      const response = NextResponse.json(
+        { message: "Sesión inválida. Inicia sesión nuevamente." },
+        { status: 401 }
+      );
+      clearSessionCookie(response);
+      return response;
+    }
+
+    const usuario = await prisma.users.findFirst({
+      where: {
+        id: userId,
+        activo: true,
+      },
+      select: {
+        id: true,
+        nombre_usuario: true,
+        correo: true,
+      },
+    });
+
+    if (!usuario) {
+      const response = NextResponse.json(
+        { message: "Sesión expirada o usuario inactivo." },
+        { status: 401 }
+      );
+      clearSessionCookie(response);
+      return response;
+    }
+
+    return NextResponse.json({
+      message: "Sesión válida.",
+      usuario,
+    });
+  } catch (error) {
+    console.error("Error validando la sesión:", error);
+    return NextResponse.json(
+      { message: "No se pudo validar la sesión." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -52,13 +127,11 @@ export async function POST(request) {
       },
     });
 
-    response.cookies.set("session_user", String(usuario.id), {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24,
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-    });
+    response.cookies.set(
+      SESSION_COOKIE_NAME,
+      String(usuario.id),
+      createSessionCookieOptions()
+    );
 
     return response;
   } catch (error) {
